@@ -35,14 +35,14 @@ class Router:
                 "competitor_only"
             )
         
-        # Schedule Posts
+        # Schedule Posts - Contains a lot of edge cases which could break this route, work on it later (Issued described in file: Scheduler edge cases)
         if intent == IntentType.SCHEDULE_POST:
             if not context.has_content_plan:
                 return(
-                    RouteType.UNKNOWN,
-                    "manager_agent",
-                    "No content plan exists yet. Manager will ask user what post they want to schedule or offer to run the pipeline first.",
-                    "manager"
+                    RouteType.FULL_PIPELINE,
+                    "business_profiler_agent",
+                    "No content plan found. Running full pipeline first.",
+                    "content_generator"
                 )
             return (
                 RouteType.SCHEDULE_POST,
@@ -51,8 +51,15 @@ class Router:
                 "scheduler"
             )
         
-        # Reschedule Posts
+        # Reschedule Posts - Contains a lot of edge cases which could break this route, work on it later (Issues described in file: Scheduler edge cases)
         if intent == IntentType.RESCHEDULE_POST:
+            if not context.has_scheduled_posts:
+                return(
+                    RouteType.FULL_PIPELINE,
+                    "business_profiler_agent",
+                    "No scheduled posts found. Running full pipeline first.",
+                    "content_generator"
+                )
             return (
                 RouteType.RESCHEDULE_POST,
                 "scheduler_agent",
