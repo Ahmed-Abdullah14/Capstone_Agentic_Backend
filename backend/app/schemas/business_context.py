@@ -27,19 +27,20 @@ class BusinessContext(BaseModel):
     has_top_posts: bool = False          # True once competitor list & posts have been scraped + ranked
     has_trend_summary: bool = False      # True once trend analysis is  complete
     has_content_plan: bool = False       # True once content generator has run 
+    has_scheduled_posts: bool = False    # True once user has at least one scheduled post in calender
 
     # Freshness timestamps (for re-run efficiency) 
     hashtags_last_updated: Optional[datetime] = None
     posts_last_scraped: Optional[datetime] = None
     trends_last_updated: Optional[datetime] = None
 
-    # Helper functions to calculate post and trend summaries age and check their validaity 
+    # Helper functions to calculate post and trend summaries age and check their validaity - Used in Router.py
     def are_posts_valid(self, max_age_days):
         # TODO: Implement this function to calculate post age based on post_last_scraped and check if that age is within threshold of max_age_days
         # Function should return eitehr True or False
-        return False
+        return True
     
     def are_trends_valid(self, max_age_days):
         # TODO: Implement this function to calculate trend summary age based on trends_last_updated and check if that age is within threshold of max_age_days
         # Function should return eitehr True or False
-        return False
+        return True
