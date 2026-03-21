@@ -22,7 +22,7 @@ pip install -r requirements.txt
 ```
 
 ## Running the Project
-
+Inside the `backend` folder run: 
 ```bash
 python run.py
 ```
