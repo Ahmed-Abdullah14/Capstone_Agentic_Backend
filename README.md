@@ -3,7 +3,7 @@ This repo is to test the backend of our LumenIQ capstone project
 
 ## Initial Setup
 
-1. Create a virtual environment in the specified `backend` directory by running the following command in your terminal:
+1. Create a virtual environment in the `backend` directory by running the following command in your terminal:
 ```bash
 python -m venv venv
 ```
