@@ -37,6 +37,7 @@ class ManagerAgent(Agent):
         # Instantiating routes and intents
         self.intent_classifier = IntentClassifier()
         self.router = Router()
+        self.business_profiler_queries = BusinessProfilerQueries()
 
         # Instantiating Manager
         self.agent = ChatCompletionAgent(
@@ -56,15 +57,6 @@ class ManagerAgent(Agent):
         async with cl.Step(name = "Planning Route...", type="step") as step:
             route, target_agent, reason, pipeline_end_at = self.router.determine_route(intent, business_context)
             step.output = f"Route determined: {route} \nReason: {reason}"
-
-        # Shows manager state at from the previous message
-        async with cl.Step(name="Session State", type="step") as step:
-            step.output = (
-                f"Pending route (Note: This is previous state route, it will update on next msg): {pending_route or 'None'}\n"
-                #f"Pending pipeline end at: {pending_pipeline_end_at or 'None'}"
-            )
-
-        # Add actual route execution next 
 
         # Debugging
         print(f"\n\n=== LLM MESSAGE ===\n{user_request.user_prompt}\n")
@@ -102,4 +94,68 @@ class ManagerAgent(Agent):
             pipeline_end_at=pipeline_end_at,
             manager_response=str(response.content) if response.content else fallback_msg
         )
+    
+    async def execute_route(self, route, pipeline_end_at, context):
+        if route == RouteType.FULL_PIPELINE:
+            profiler_agent_result = await self.business_profiler_agent.run(context = context)
+            competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
+                context = context,
+                primary_hashtags = profiler_agent_result.primary_hashtags,
+                secondary_hashtags = profiler_agent_result.secondary_hashtags,
+                location_keywords = profiler_agent_result.location_keywords,
+                exclude_accounts=profiler_agent_result.exclude_accounts
+            )
+            trend_analysis_agent_results = await self.trend_analysis_agent.run(context = context)
+            if pipeline_end_at == "analyze_photo":
+                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary, analyze_photo = True)
+            elif pipeline_end_at == "generate_image":
+                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary, generate_image = True)
+            else:
+                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary)
+
+        elif route == RouteType.SKIP_TO_COMPETITOR_ANALYSIS:
+            hashtags = await self.business_profiler_queries.get_hashtags(context.business_id)
+            competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
+                context = context,
+                primary_hashtags = profiler_agent_result.primary_hashtags,
+                secondary_hashtags = profiler_agent_result.secondary_hashtags,
+                location_keywords = profiler_agent_result.location_keywords,
+                exclude_accounts=profiler_agent_result.exclude_accounts
+            )
+            trend_analysis_agent_results = await self.trend_analysis_agent.run(context = context)
+            if pipeline_end_at == "analyze_photo":
+                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary, analyze_photo = True)
+            elif pipeline_end_at == "generate_image":
+                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary, generate_image = True)
+            else:
+                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary)
+        
+        elif route == RouteType.SKIP_TO_TREND_ANALYSIS:
+            trend_analysis_agent_results = await self.trend_analysis_agent.run(context = context)
+            if pipeline_end_at == "analyze_photo":
+                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary, analyze_photo = True)
+            elif pipeline_end_at == "generate_image":
+                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary, generate_image = True)
+            else:
+                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary)
+        
+        elif route == RouteType.SKIP_TO_CONTENT_GENERATOR:
+            trend_summary = await self.business_profiler_queries.get_trend_summary(context.business_id)
+            await self.content_generator_agent.run(context=context, trend_summary=trend_summary)
+
+        elif route == RouteType.PROFILER_AND_COMPETITOR_ONLY:
+            profiler_agent_result = await self.business_profiler_agent.run(context = context)
+            competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
+                context = context,
+                primary_hashtags = profiler_agent_result.primary_hashtags,
+                secondary_hashtags = profiler_agent_result.secondary_hashtags,
+                location_keywords = profiler_agent_result.location_keywords,
+                exclude_accounts=profiler_agent_result.exclude_accounts
+            )
+
+
+
+
+
+    
 

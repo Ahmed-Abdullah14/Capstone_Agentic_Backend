@@ -2,7 +2,9 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 
-# Pydantic model to format Business Profiler Agent Response
+#------------------------------------------------------- Business Profiler Agent ----------------------------------------------------------
+
+# Pydantic model to format Business Profiler Agent Response 
 class BusinessProfilerResult(BaseModel):
     business_id: str
 
@@ -14,6 +16,8 @@ class BusinessProfilerResult(BaseModel):
     ideal_follower_min: int
     ideal_follower_max: int
 
+# ------------------------------------------------------ Competitor Analysis Agent --------------------------------------------------------
+
 # Pydantic model to format Competitor Analysis Agent Response 
 class CompetitorAnalysisResult(BaseModel):
     business_id: str
@@ -23,6 +27,9 @@ class CompetitorAnalysisResult(BaseModel):
     competitor_count: int
     post_count: int
     message: str        # Returns message to manager so manager knows what to tell user, for ex "Found 10 competitors and scraped 100 posts."
+
+
+# ----------------------------------------------------- Trend Analysis Agent ---------------------------------------------------------------
 
 # Pydantic model needed to format Best Combinations, used in TrendSummary & TrendAnalysisResults
 class BestCombination(BaseModel):
@@ -37,7 +44,7 @@ class TrendSummary(BaseModel):
     caption_trends: list[str]
     hashtag_trends: list[str]
     posting_trends: list[str]
-    best_combinations: list[BestCombination]
+    best_combinations: list[BestCombination]        # Used from class above BestCombination(BaseModel)
 
 # Pydantic model to format Trend Analysis Agent Response 
 class TrendAnalysisResult(BaseModel):
@@ -46,7 +53,10 @@ class TrendAnalysisResult(BaseModel):
     image_cluster_count: int
     caption_cluster_count: int
     message: str        # Returns message to manager then manager returns to user, for ex "Identitifed 10 image clusters and 5 caption clusters"
-    summary: Optional[TrendSummary] = None
+    summary: Optional[TrendSummary] = None         # Used from class above TrendSummary(BaseModel)
+
+
+# ---------------------------------------------------- Content Generator Agent ------------------------------------------------------------
 
 # Pydantic model needed to format photo in ContentGeneratorResult
 class PhotoDetails(BaseModel):
@@ -58,10 +68,13 @@ class ContentGeneratorResult(BaseModel):
     business_id: str
     success: bool
     content_response: str           # full narrative description of the post idea
-    photo: PhotoDetails          
+    photo: PhotoDetails             # Used from class above PhotoDetails(BaseModel)   
     caption: str
     hashtags: list[str]
     generated_at: Optional[datetime] = None
+
+
+# -------------------------------------------------------- Scheduler Agent --------------------------------------------------------------
 
 # Pydantic model to Scheduler Agent Response 
 class SchedulerResult(BaseModel):
