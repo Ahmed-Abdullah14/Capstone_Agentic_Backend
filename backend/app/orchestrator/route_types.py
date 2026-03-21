@@ -9,6 +9,8 @@ class IntentType(str, Enum):
     SCHEDULE_POST          = "schedule_post"           # User asks to schedule a post to calendar
     RESCHEDULE_POST        = "reschedule_post"         # User asks to move a scheduled post to a different date
     GENERATE_POST_IMAGE    = "generate_post_image"     # User asks to generate post image (Not sure if we will have time to implemeent )
+    CONFIRM                = "confirm"
+    CANCEL                 = "cancel"
     UNKNOWN                = "unknown"  
 
 class RouteType(str, Enum):

@@ -1,4 +1,5 @@
 import chainlit as cl
+from app.config import APP_NAME
 from semantic_kernel.contents import ChatHistory
 from semantic_kernel.agents import ChatHistoryAgentThread
 from app.kernel_config import kernel_init
@@ -6,13 +7,19 @@ from app.agents.manager_agent import ManagerAgent
 from app.schemas.business_context import BusinessContext
 from app.schemas.user_request import UserRequest
 from app.db.business_profiler_queries import BusinessProfilerQueries
-from app.orchestrator.route_types import RouteType
+from app.orchestrator.route_types import RouteType, IntentType
+
 
 
 kernel = kernel_init()
 manager = ManagerAgent(kernel)
 business_profiler_queries = BusinessProfilerQueries()
 
+IMMEDIATE_ROUTES = [
+    RouteType.FETCH_EXISTING_COMPETITORS,
+    RouteType.ANALYZE_PHOTO,
+    RouteType.GENERATE_POST_IMAGE,
+]
 
 @cl.on_chat_start
 async def on_chat_start():
@@ -32,7 +39,7 @@ async def on_chat_start():
     cl.user_session.set("context", context)
 
     await cl.Message(content = (
-        "Welcome to LumenIQ.\n\n"
+        f"Welcome to {APP_NAME}.\n\n"
         "I'm your AI assistant. I can help you create engaging social media content, schedule posts, analyze trends, and manage your social media strategy.\n\n"
         "Your business profile has been set up. Whenever you're ready, let me know would you like to work on today?"
     )).send()
@@ -66,12 +73,48 @@ async def on_message(message: cl.Message):
             pending_route=pending_route
         )
 
-        await cl.Message(content = manager_decision.manager_response).send()
-
+        
         if manager_decision.route not in [RouteType.UNKNOWN]:
             cl.user_session.set("pending_route", manager_decision.route)
             cl.user_session.set("pending_pipeline_end_at", manager_decision.pipeline_end_at)
 
+
+        async with cl.Step(name="Current Session State:", type="step") as step:
+            step.output = (
+                f"Pending route: {cl.user_session.get('pending_route') or 'None'}\n"
+                f"Pending pipeline end at: {cl.user_session.get('pending_pipeline_end_at') or 'None'}"
+            )
+
+        await cl.Message(content = manager_decision.manager_response).send()
+
+
+        if manager_decision.route in IMMEDIATE_ROUTES:
+            async with cl.Step(name="Running pipeline...", type="run") as step:
+                await manager.execute_route(
+                    route=manager_decision.route,
+                    pipeline_end_at=manager_decision.pipeline_end_at,
+                    context=context
+                )
+                step.output = "Complete"
+            cl.user_session.set("pending_route", None)
+            cl.user_session.set("pending_pipeline_end_at", None)
+
+
+        elif manager_decision.intent == IntentType.CONFIRM and pending_route:
+            async with cl.Step(name="Running pipeline...", type="run") as step:
+                await manager.execute_route(
+                    route=pending_route,
+                    pipeline_end_at=pending_pipeline_end_at,
+                    context=context
+                )
+                step.output = "Complete"
+            cl.user_session.set("pending_route", None)
+            cl.user_session.set("pending_pipeline_end_at", None)
+
+        elif manager_decision.intent == IntentType.CANCEL:
+            cl.user_session.set("pending_route", None)
+            cl.user_session.set("pending_pipeline_end_at", None)
+            
         context = business_profiler_queries.get_business_context(user_id, business_id)
         cl.user_session.set("context", context)
 

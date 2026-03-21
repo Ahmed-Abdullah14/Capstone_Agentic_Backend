@@ -30,11 +30,16 @@ class IntentClassifier:
             "caption for this", "caption for my photo", "caption for my picture", "what should i caption", 
             "analyze my photo", "analyze this photo", "best time for this", "when should i post this",
             "review my photo"
-
         ],
         IntentType.GENERATE_POST_IMAGE : [
             "generate image", "create image", "make a photo", "generate a photo", "ai image", "create visual"
-        ]   
+        ],
+        IntentType.CONFIRM: [
+            "yes", "yeah", "yep", "ok", "okay", "sure", "proceed", "go ahead", "start", "begin", "do it", "let's go", "sounds good"
+        ],
+        IntentType.CANCEL: [
+            "no", "nope", "nah", "cancel", "stop", "don't", "forget it", "never mind", "not now", "skip it"
+        ],
     }
 
     # Initialize an LLM Model, this is going to be used as a fallback mode when the above matching fails
@@ -73,7 +78,9 @@ class IntentClassifier:
                         "4. schedule_post: user wants to add a new post to their calendar\n"
                         "5. reschedule_post: user wants to move an existing scheduled post to a different date or time\n"
                         "6. generate_post_image: user wants an AI generated image created for their post\n"
-                        "7. unknown: none of the above fit\n\n"
+                        "7. confirm: user is agreeing or confirming to proceed with a previously suggested action\n"
+                        "8. cancel: user is declining or cancelling a previously suggested action\n"
+                        "9. unknown: none of the above fit\n\n"
                         "Return only the intent value without numbers and without colons, nothing else."
                     )},
                     {"role": "user", "content": user_prompt}
