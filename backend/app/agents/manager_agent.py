@@ -62,6 +62,19 @@ class ManagerAgent(Agent):
         print(f"\n\n=== LLM MESSAGE ===\n{user_request.user_prompt}\n")
 
         # Adding system message to memory thread with pipeline state
+        if intent == IntentType.CONFIRM and pending_route:
+            determined_route = pending_route
+        elif route not in [RouteType.UNKNOWN]:
+            determined_route = route
+        else: 
+            determined_route = None
+        
+        route_info = ""
+        if determined_route:
+            route_info = f"\nDetermined route for this request: {determined_route}\n"
+            route_info += "Follow the pipeline state above when responding. Do not suggest running steps that are already complete."
+        
+        
         thread._chat_history.add_system_message(
             f"Current pipeline state:\n"
             f"- has_hashtags: {business_context.has_hashtags}\n"
@@ -69,6 +82,8 @@ class ManagerAgent(Agent):
             f"- has_trend_summary: {business_context.has_trend_summary}\n"
             f"- has_content_plan: {business_context.has_content_plan}\n"
             f"- pending_route: {pending_route or 'None'}\n"
+            f"{route_info}"
+
         )
         
         # Adding user message to memory thread
@@ -94,7 +109,8 @@ class ManagerAgent(Agent):
             pipeline_end_at=pipeline_end_at,
             manager_response=str(response.content) if response.content else fallback_msg
         )
-    
+
+    # Execute Pipelines - This function is called from chainlit_app.py
     async def execute_route(self, route, pipeline_end_at, context):
         if route == RouteType.FULL_PIPELINE:
             profiler_agent_result = await self.business_profiler_agent.run(context = context)
@@ -103,7 +119,7 @@ class ManagerAgent(Agent):
                 primary_hashtags = profiler_agent_result.primary_hashtags,
                 secondary_hashtags = profiler_agent_result.secondary_hashtags,
                 location_keywords = profiler_agent_result.location_keywords,
-                exclude_accounts=profiler_agent_result.exclude_accounts
+                exclude_accounts = profiler_agent_result.exclude_accounts
             )
             trend_analysis_agent_results = await self.trend_analysis_agent.run(context = context)
             if pipeline_end_at == "analyze_photo":
@@ -117,10 +133,10 @@ class ManagerAgent(Agent):
             hashtags = await self.business_profiler_queries.get_hashtags(context.business_id)
             competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
                 context = context,
-                primary_hashtags = profiler_agent_result.primary_hashtags,
-                secondary_hashtags = profiler_agent_result.secondary_hashtags,
-                location_keywords = profiler_agent_result.location_keywords,
-                exclude_accounts=profiler_agent_result.exclude_accounts
+                primary_hashtags = hashtags.primary_hashtags,
+                secondary_hashtags = hashtags.secondary_hashtags,
+                location_keywords = hashtags.location_keywords,
+                exclude_accounts = hashtags.exclude_accounts
             )
             trend_analysis_agent_results = await self.trend_analysis_agent.run(context = context)
             if pipeline_end_at == "analyze_photo":
@@ -141,21 +157,48 @@ class ManagerAgent(Agent):
         
         elif route == RouteType.SKIP_TO_CONTENT_GENERATOR:
             trend_summary = await self.business_profiler_queries.get_trend_summary(context.business_id)
-            await self.content_generator_agent.run(context=context, trend_summary=trend_summary)
+            await self.content_generator_agent.run(context = context, trend_summary = trend_summary)
 
         elif route == RouteType.PROFILER_AND_COMPETITOR_ONLY:
             profiler_agent_result = await self.business_profiler_agent.run(context = context)
-            competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
+            await self.competitor_analysis_agent.run(
                 context = context,
                 primary_hashtags = profiler_agent_result.primary_hashtags,
                 secondary_hashtags = profiler_agent_result.secondary_hashtags,
                 location_keywords = profiler_agent_result.location_keywords,
-                exclude_accounts=profiler_agent_result.exclude_accounts
+                exclude_accounts = profiler_agent_result.exclude_accounts
             )
+            competitors_list = await self.business_profiler_queries.get_competitor_list(context.business_id)
+            return competitors_list
+        
+        elif route == RouteType.COMPETITOR_ANALYSIS_ONLY:
+            hashtags = await self.business_profiler_queries.get_hashtags(context.business_id)
+            await self.competitor_analysis_agent.run(
+                context = context,
+                primary_hashtags = hashtags.primary_hashtags,
+                secondary_hashtags = hashtags.secondary_hashtags,
+                location_keywords = hashtags.location_keywords,
+                exclude_accounts = hashtags.exclude_accounts
+            )
+            competitors_list = await self.business_profiler_queries.get_competitor_list(context.business_id)
+            return competitors_list
+        
+        elif route == RouteType.FETCH_EXISTING_COMPETITORS:
+            competitors_list = await self.business_profiler_queries.get_competitor_list(context.business_id)
+            return competitors_list
+        
+        elif route == RouteType.GENERATE_POST_IMAGE:
+            trend_summary = await self.business_profiler_queries.get_trend_summary(context.business_id)
+            await self.content_generator_agent.run(context = context, trend_summary = trend_summary, generate_image = True)
+        
+        elif route == RouteType.ANALYZE_PHOTO:
+            trend_summary = await self.business_profiler_queries.get_trend_summary(context.business_id)
+            await self.content_generator_agent.run(context = context, trend_summary = trend_summary, analyze_photo = True)
 
+        elif route == RouteType.SCHEDULE_POST:
+            await self.scheduler_agent.run(context = context, action = "schedule")
 
-
-
-
-    
-
+        elif route == RouteType.RESCHEDULE_POST:
+            await self.scheduler_agent.run(context = context, action = "reschedule")
+        
+        

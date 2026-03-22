@@ -74,7 +74,7 @@ async def on_message(message: cl.Message):
         )
 
         
-        if manager_decision.route not in [RouteType.UNKNOWN]:
+        if manager_decision.route not in [RouteType.UNKNOWN] and manager_decision.intent not in [IntentType.CONFIRM, IntentType.CANCEL]:
             cl.user_session.set("pending_route", manager_decision.route)
             cl.user_session.set("pending_pipeline_end_at", manager_decision.pipeline_end_at)
 

@@ -157,7 +157,35 @@ class Router:
                 "generate_image"
             )
 
-        # Fallback 
+        # Fallback
+        if context.has_trend_summary and not context.has_content_plan:
+            return (
+                RouteType.SKIP_TO_CONTENT_GENERATOR,
+                "content_generator_agent",
+                "Trend summary exists. Ready to generate content plan.",
+                "content_generator"
+            )
+        if context.has_top_posts and not context.has_trend_summary:
+            return (
+                RouteType.SKIP_TO_TREND_ANALYSIS,
+                "trend_analysis_agent",
+                "Posts exist. Ready to run trend analysis.",
+                "content_generator"
+            )
+        if context.has_hashtags and not context.has_top_posts:
+            return (
+                RouteType.SKIP_TO_COMPETITOR_ANALYSIS,
+                "competitor_analysis_agent",
+                "Hashtags exist. Ready to run competitor analysis.",
+                "content_generator"
+            )
+        if context.has_content_plan and not context.has_scheduled_posts:
+            return (
+                RouteType.SCHEDULE_POST,
+                "scheduler_agent",
+                "Content plan exists. Ready to schedule a post.",
+                "scheduler"
+            )
         return (
             RouteType.UNKNOWN,
             "manager_agent",
