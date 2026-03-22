@@ -16,6 +16,10 @@ class BusinessProfilerAgent(Agent):
 
     async def run(self, context: BusinessContext) -> BusinessProfilerResult:
 
+        # validation
+        if not all([context.business_name, context.business_type, context.location, context.target_customers]):
+            raise ValueError("Business context is missing required fields (business_name, business_type, location, target_customers)")
+
         system_prompt = (
             "You are an Instagram growth strategist for local businesses.\n"
             "Given a business profile, generate hashtags and search parameters to find local competitors on Instagram.\n\n"
@@ -45,23 +49,41 @@ class BusinessProfilerAgent(Agent):
             f"Instagram Handle: {context.instagram_handle or 'N/A'}"
         )
 
-        response = await self._client.chat.completions.create(
-            model=PROFILER_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            temperature=0.0,
-        )
+        # Call LLM to generate hashtags and search parameters
+        try:
+            response = await self._client.chat.completions.create(
+                model=PROFILER_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.0,
+            )
+        except Exception as e:
+            raise RuntimeError(f"Business Profiler LLM call failed: {e}")
 
-        raw = response.choices[0].message.content.strip()
+        raw = response.choices[0].message.content
+        if not raw:
+            raise RuntimeError("Business Profiler received empty response from LLM")
+
+        raw = raw.strip()
 
         # Strip markdown code fences if present
         if raw.startswith("```"):
             raw = raw.split("\n", 1)[1]
             raw = raw.rsplit("```", 1)[0]
 
-        data = json.loads(raw)
+        # Parse JSON response
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Business Profiler failed to parse LLM response as JSON: {e}\nRaw response: {raw}")
+
+        # Validate required fields in LLM response
+        required_fields = ["primary_hashtags", "secondary_hashtags", "location_keywords", "exclude_accounts"]
+        missing = [f for f in required_fields if f not in data]
+        if missing:
+            raise RuntimeError(f"Business Profiler LLM response missing required fields: {missing}")
 
         return BusinessProfilerResult(
             business_id=context.business_id,
