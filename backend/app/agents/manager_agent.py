@@ -16,12 +16,16 @@ from app.orchestrator.intent_classifier import IntentClassifier
 from app.orchestrator.router import Router
 from app.orchestrator.route_types import RouteType, IntentType
 from app.db.business_profiler_queries import BusinessProfilerQueries
-from pathlib import Path
 
 # Retreiving Manager instructions from app/prompts/manager.txt
 with open("app/prompts/manager.txt", "r") as f:
     MANAGER_INSTRUCTIONS = f.read()
 
+IMMEDIATE_ROUTES = [
+    RouteType.FETCH_EXISTING_COMPETITORS,
+    RouteType.ANALYZE_PHOTO,
+    RouteType.GENERATE_POST_IMAGE,
+]
 
 class ManagerAgent(Agent):
     def __init__(self, kernel):
@@ -46,7 +50,7 @@ class ManagerAgent(Agent):
             instructions = MANAGER_INSTRUCTIONS
         )
 
-    async def run(self, user_request, business_context, thread, pending_route=None):
+    async def run(self, user_request, business_context, thread, pending_route=None, pending_pipeline_end_at=None):
 
         # Try to figure out user intent, this function is wrapped in a chainlit step to show thought process on chainlit
         async with cl.Step(name = "Understanding your request...", type="step") as step:
@@ -57,9 +61,15 @@ class ManagerAgent(Agent):
         async with cl.Step(name = "Planning Route...", type="step") as step:
             route, target_agent, reason, pipeline_end_at = self.router.determine_route(intent, business_context)
             step.output = f"Route determined: {route} \nReason: {reason}"
-
+        
+        async with cl.Step(name="Fetching Current State...", type='step' ) as step:
+            step.output = (
+                f"Pending route: {pending_route or 'None'}\n"
+                f"Pending pipeline end at: {pending_pipeline_end_at or 'None'}"
+            )
+  
         # Debugging
-        print(f"\n\n=== LLM MESSAGE ===\n{user_request.user_prompt}\n")
+        #print(f"\n\n=== LLM MESSAGE ===\n{user_request.user_prompt}\n")
 
         # Adding system message to memory thread with pipeline state
         if intent == IntentType.CONFIRM and pending_route:
@@ -72,9 +82,10 @@ class ManagerAgent(Agent):
         route_info = ""
         if determined_route:
             route_info = f"\nDetermined route for this request: {determined_route}\n"
-            route_info += "Follow the pipeline state above when responding. Do not suggest running steps that are already complete."
+            route_info += f"This is what will execute when the user confirms.\n"
+            route_info += f"Your response must align with this route, do not suggest a different action.\n"
         
-        
+
         thread._chat_history.add_system_message(
             f"Current pipeline state:\n"
             f"- has_hashtags: {business_context.has_hashtags}\n"
@@ -97,9 +108,33 @@ class ManagerAgent(Agent):
         ) 
 
         # Debugging
-        print(f"\n\n=== LLM RESPONSE ===\n{response.content}\n")
+        #print(f"\n\n=== LLM RESPONSE ===\n{response.content}\n")
 
         fallback_msg = "I am not sure how to help you with that, could you please provide some more information?"
+        
+        await cl.Message(content = str(response.content) if response.content else fallback_msg).send()
+
+        # Execute route 
+        final_agent_response = None
+
+        if route in IMMEDIATE_ROUTES:
+            final_agent_response = await self.execute_route(route, pipeline_end_at, business_context)
+        elif intent == IntentType.CONFIRM and pending_route:
+            final_agent_response = await self.execute_route(pending_route, pending_pipeline_end_at, business_context)
+
+        if final_agent_response:
+            final_manager_message = await self.agent.get_response(
+                message =(
+                    f"The following action has completed:\n"
+                    f"Route executed: {route if route in IMMEDIATE_ROUTES else pending_route}\n"
+                    f"Result: {final_agent_response}\n\n"
+                    f"Present these results to the user naturally following the instructions."
+                ),
+                thread=thread,
+                settings=OpenAIChatPromptExecutionSettings()
+            )
+            await cl.Message(content = str(final_manager_message.content)).send()
+
 
         return ManagerDecision(
             intent=intent,
@@ -107,98 +142,173 @@ class ManagerAgent(Agent):
             target_agent=target_agent,
             reason=reason,
             pipeline_end_at=pipeline_end_at,
-            manager_response=str(response.content) if response.content else fallback_msg
+            manager_response=""
         )
 
     # Execute Pipelines - This function is called from chainlit_app.py
     async def execute_route(self, route, pipeline_end_at, context):
         if route == RouteType.FULL_PIPELINE:
-            profiler_agent_result = await self.business_profiler_agent.run(context = context)
-            competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
-                context = context,
-                primary_hashtags = profiler_agent_result.primary_hashtags,
-                secondary_hashtags = profiler_agent_result.secondary_hashtags,
-                location_keywords = profiler_agent_result.location_keywords,
-                exclude_accounts = profiler_agent_result.exclude_accounts
-            )
-            trend_analysis_agent_results = await self.trend_analysis_agent.run(context = context)
-            if pipeline_end_at == "analyze_photo":
-                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary, analyze_photo = True)
-            elif pipeline_end_at == "generate_image":
-                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary, generate_image = True)
-            else:
-                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary)
+            async with cl.Step(name="Analyzing your business profile...") as step:
+                profiler_agent_result = await self.business_profiler_agent.run(context = context)
+                step.output = "Business profile analyzed."
+
+            async with cl.Step(name="Finding your competitors...") as step:
+                competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
+                    context = context,
+                    primary_hashtags = profiler_agent_result.primary_hashtags,
+                    secondary_hashtags = profiler_agent_result.secondary_hashtags,
+                    location_keywords = profiler_agent_result.location_keywords,
+                    exclude_accounts = profiler_agent_result.exclude_accounts
+                )
+                step.output = competitor_analysis_agent_result.message
+
+            async with cl.Step(name="Identifying best performing trends...") as step:
+                trend_analysis_agent_result = await self.trend_analysis_agent.run(context = context)
+                step.output = trend_analysis_agent_result.message 
+
+            async with cl.Step(name="Generating content...") as step:
+                if pipeline_end_at == "analyze_photo":
+                    content_generator_agent_result = await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_result.summary, analyze_photo = True)
+                elif pipeline_end_at == "generate_image":
+                    content_generator_agent_result = await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_result.summary, generate_image = True)
+                else:
+                    content_generator_agent_result = await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_result.summary)
+                step.output = "Content generated."
+
+            return content_generator_agent_result
+        
 
         elif route == RouteType.SKIP_TO_COMPETITOR_ANALYSIS:
             hashtags = await self.business_profiler_queries.get_hashtags(context.business_id)
-            competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
-                context = context,
-                primary_hashtags = hashtags.primary_hashtags,
-                secondary_hashtags = hashtags.secondary_hashtags,
-                location_keywords = hashtags.location_keywords,
-                exclude_accounts = hashtags.exclude_accounts
-            )
-            trend_analysis_agent_results = await self.trend_analysis_agent.run(context = context)
-            if pipeline_end_at == "analyze_photo":
-                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary, analyze_photo = True)
-            elif pipeline_end_at == "generate_image":
-                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary, generate_image = True)
-            else:
-                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary)
-        
+ 
+            async with cl.Step(name="Finding your competitors...") as step:
+                competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
+                    context = context,
+                    primary_hashtags = hashtags.primary_hashtags,
+                    secondary_hashtags = hashtags.secondary_hashtags,
+                    location_keywords = hashtags.location_keywords,
+                    exclude_accounts = hashtags.exclude_accounts
+                )
+                step.output = competitor_analysis_agent_result.message
+ 
+            async with cl.Step(name="Identifying best performing trends...") as step:
+                trend_analysis_agent_result = await self.trend_analysis_agent.run(context = context)
+                step.output = trend_analysis_agent_result.message
+ 
+            async with cl.Step(name="Generating content...") as step:
+                if pipeline_end_at == "analyze_photo":
+                    content_generator_agent_result = await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_result.summary, analyze_photo = True)
+                elif pipeline_end_at == "generate_image":
+                    content_generator_agent_result = await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_result.summary, generate_image = True)
+                else:
+                    content_generator_agent_result = await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_result.summary)
+                step.output = "Content generated."
+ 
+            return content_generator_agent_result
+ 
+
         elif route == RouteType.SKIP_TO_TREND_ANALYSIS:
-            trend_analysis_agent_results = await self.trend_analysis_agent.run(context = context)
-            if pipeline_end_at == "analyze_photo":
-                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary, analyze_photo = True)
-            elif pipeline_end_at == "generate_image":
-                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary, generate_image = True)
-            else:
-                await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary)
-        
+            async with cl.Step(name="Identifying best performing trends...") as step:
+                trend_analysis_agent_result = await self.trend_analysis_agent.run(context = context)
+                step.output = trend_analysis_agent_result.message
+ 
+            async with cl.Step(name="Generating content...") as step:
+                if pipeline_end_at == "analyze_photo":
+                    content_generator_agent_result = await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_result.summary, analyze_photo = True)
+                elif pipeline_end_at == "generate_image":
+                    content_generator_agent_result = await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_result.summary, generate_image = True)
+                else:
+                    content_generator_agent_result = await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_result.summary)
+                step.output = "Content generated."
+ 
+            return content_generator_agent_result
+ 
+
         elif route == RouteType.SKIP_TO_CONTENT_GENERATOR:
             trend_summary = await self.business_profiler_queries.get_trend_summary(context.business_id)
-            await self.content_generator_agent.run(context = context, trend_summary = trend_summary)
+ 
+            async with cl.Step(name="Generating content...") as step:
+                content_generator_agent_result = await self.content_generator_agent.run(context = context, trend_summary = trend_summary)
+                step.output = "Content generated."
+ 
+            return content_generator_agent_result
+ 
 
         elif route == RouteType.PROFILER_AND_COMPETITOR_ONLY:
-            profiler_agent_result = await self.business_profiler_agent.run(context = context)
-            await self.competitor_analysis_agent.run(
-                context = context,
-                primary_hashtags = profiler_agent_result.primary_hashtags,
-                secondary_hashtags = profiler_agent_result.secondary_hashtags,
-                location_keywords = profiler_agent_result.location_keywords,
-                exclude_accounts = profiler_agent_result.exclude_accounts
-            )
+            async with cl.Step(name="Analyzing your business profile...") as step:
+                profiler_agent_result = await self.business_profiler_agent.run(context = context)
+                step.output = "Business profile analyzed."
+ 
+            async with cl.Step(name="Finding your competitors...") as step:
+                competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
+                    context = context,
+                    primary_hashtags = profiler_agent_result.primary_hashtags,
+                    secondary_hashtags = profiler_agent_result.secondary_hashtags,
+                    location_keywords = profiler_agent_result.location_keywords,
+                    exclude_accounts = profiler_agent_result.exclude_accounts
+                )
+                step.output = competitor_analysis_agent_result.message
+ 
             competitors_list = await self.business_profiler_queries.get_competitor_list(context.business_id)
             return competitors_list
-        
+ 
+
         elif route == RouteType.COMPETITOR_ANALYSIS_ONLY:
             hashtags = await self.business_profiler_queries.get_hashtags(context.business_id)
-            await self.competitor_analysis_agent.run(
-                context = context,
-                primary_hashtags = hashtags.primary_hashtags,
-                secondary_hashtags = hashtags.secondary_hashtags,
-                location_keywords = hashtags.location_keywords,
-                exclude_accounts = hashtags.exclude_accounts
-            )
+ 
+            async with cl.Step(name="Finding your competitors...") as step:
+                competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
+                    context = context,
+                    primary_hashtags = hashtags.primary_hashtags,
+                    secondary_hashtags = hashtags.secondary_hashtags,
+                    location_keywords = hashtags.location_keywords,
+                    exclude_accounts = hashtags.exclude_accounts
+                )
+                step.output = competitor_analysis_agent_result.message
+ 
             competitors_list = await self.business_profiler_queries.get_competitor_list(context.business_id)
             return competitors_list
-        
+ 
+
         elif route == RouteType.FETCH_EXISTING_COMPETITORS:
-            competitors_list = await self.business_profiler_queries.get_competitor_list(context.business_id)
+            async with cl.Step(name="Fetching competitor list...") as step:
+                competitors_list = await self.business_profiler_queries.get_competitor_list(context.business_id)
+                step.output = f"Found {len(competitors_list)} competitors."
+ 
             return competitors_list
-        
+ 
+
         elif route == RouteType.GENERATE_POST_IMAGE:
             trend_summary = await self.business_profiler_queries.get_trend_summary(context.business_id)
-            await self.content_generator_agent.run(context = context, trend_summary = trend_summary, generate_image = True)
-        
+ 
+            async with cl.Step(name="Generating post image...") as step:
+                content_generator_agent_result = await self.content_generator_agent.run(context = context, trend_summary = trend_summary, generate_image = True)
+                step.output = "Post image generated."
+ 
+            return content_generator_agent_result
+
+
         elif route == RouteType.ANALYZE_PHOTO:
             trend_summary = await self.business_profiler_queries.get_trend_summary(context.business_id)
-            await self.content_generator_agent.run(context = context, trend_summary = trend_summary, analyze_photo = True)
+ 
+            async with cl.Step(name="Analyzing photo...") as step:
+                content_generator_agent_result = await self.content_generator_agent.run(context = context, trend_summary = trend_summary, analyze_photo = True)
+                step.output = "Photo analysis complete."
+ 
+            return content_generator_agent_result
+ 
 
         elif route == RouteType.SCHEDULE_POST:
-            await self.scheduler_agent.run(context = context, action = "schedule")
+            async with cl.Step(name="Scheduling post...") as step:
+                scheduler_agent_result = await self.scheduler_agent.run(context = context, action = "schedule")
+                step.output = scheduler_agent_result.message
+ 
+            return scheduler_agent_result
+ 
 
         elif route == RouteType.RESCHEDULE_POST:
-            await self.scheduler_agent.run(context = context, action = "reschedule")
-        
-        
+            async with cl.Step(name="Rescheduling post...") as step:
+                scheduler_agent_result = await self.scheduler_agent.run(context = context, action = "reschedule")
+                step.output = scheduler_agent_result.message
+ 
+            return scheduler_agent_result
