@@ -1,27 +1,27 @@
 import unittest
 from datetime import datetime, timezone, timedelta
 
-from app.schemas.business_context import BusinessContext, _age_within_threshold
+from app.schemas.business_context import BusinessContext, check_within_range
 
 
 class TestAgeWithinThreshold(unittest.TestCase):
     def test_none_returns_false(self):
-        self.assertFalse(_age_within_threshold(None, 14))
+        self.assertFalse(check_within_range(None, 14))
 
     def test_exactly_at_max_age_boundary(self):
         fixed_now = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
         ts = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-        self.assertTrue(_age_within_threshold(ts, 14, now=fixed_now))
+        self.assertTrue(check_within_range(ts, 14, now=fixed_now))
 
     def test_one_second_over_boundary(self):
         fixed_now = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
         ts = datetime(2025, 1, 1, 11, 59, 59, tzinfo=timezone.utc)
-        self.assertFalse(_age_within_threshold(ts, 14, now=fixed_now))
+        self.assertFalse(check_within_range(ts, 14, now=fixed_now))
 
     def test_naive_datetime_treated_as_utc(self):
         fixed_now = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
         ts_naive = datetime(2025, 1, 1, 12, 0, 0)
-        self.assertTrue(_age_within_threshold(ts_naive, 14, now=fixed_now))
+        self.assertTrue(check_within_range(ts_naive, 14, now=fixed_now))
 
 
 class TestBusinessContextValidity(unittest.TestCase):
