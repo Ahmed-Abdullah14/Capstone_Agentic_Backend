@@ -10,9 +10,11 @@
 --   idea_status: pending, approved, rejected, used
 --   scheduled_post_status: draft, scheduled, published, failed
 
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
 CREATE TABLE public.businesses (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL,
   name text,
   business_type text,
   city text,
@@ -29,8 +31,26 @@ CREATE TABLE public.businesses (
   refresh_token text,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT businesses_pkey PRIMARY KEY (id),
-  CONSTRAINT businesses_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id)
+  CONSTRAINT businesses_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.calendar_posts (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  business_id uuid NOT NULL,
+  content_calendar_id uuid NOT NULL,
+  status USER-DEFINED NOT NULL DEFAULT 'draft'::scheduled_post_status,
+  scheduled_at timestamp with time zone,
+  approved_at timestamp with time zone,
+  caption text,
+  media jsonb DEFAULT '[]'::jsonb,
+  hashtags ARRAY DEFAULT '{}'::text[],
+  publish_result jsonb,
+  last_error jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  day_of_the_week integer,
+  CONSTRAINT calendar_posts_pkey PRIMARY KEY (id),
+  CONSTRAINT calendar_posts_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.businesses(id),
+  CONSTRAINT calendar_posts_content_calendar_id_fkey FOREIGN KEY (content_calendar_id) REFERENCES public.content_calendar_weekly_view(id)
 );
 CREATE TABLE public.clusters (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -49,8 +69,7 @@ CREATE TABLE public.clusters (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT clusters_pkey PRIMARY KEY (id),
-  CONSTRAINT clusters_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.businesses(id),
-  CONSTRAINT clusters_stage_run_id_fkey FOREIGN KEY (stage_run_id) REFERENCES public.pipeline_stage_runs(id)
+  CONSTRAINT clusters_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.businesses(id)
 );
 CREATE TABLE public.competitor_discovery_candidates (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -61,8 +80,32 @@ CREATE TABLE public.competitor_discovery_candidates (
   accepted boolean NOT NULL DEFAULT false,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT competitor_discovery_candidates_pkey PRIMARY KEY (id),
-  CONSTRAINT competitor_discovery_candidates_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.pipeline_stage_runs(id)
+  CONSTRAINT competitor_discovery_candidates_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.competitor_posts (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  business_id uuid NOT NULL,
+  competitor_id uuid NOT NULL,
+  platform text NOT NULL DEFAULT 'instagram'::text,
+  external_post_id text,
+  permalink text,
+  caption text,
+  posted_at timestamp with time zone,
+  media_type text,
+  media jsonb NOT NULL DEFAULT '[]'::jsonb,
+  hashtags ARRAY NOT NULL DEFAULT '{}'::text[],
+  likes_count bigint DEFAULT 0,
+  comments_count bigint DEFAULT 0,
+  engagement_rate double precision,
+  weighted_interactions double precision,
+  wii double precision,
+  is_selected boolean NOT NULL DEFAULT false,
+  selection_meta jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT competitor_posts_pkey PRIMARY KEY (id),
+  CONSTRAINT posts_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.businesses(id),
+  CONSTRAINT posts_competitor_id_fkey FOREIGN KEY (competitor_id) REFERENCES public.competitors(id)
 );
 CREATE TABLE public.competitors (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -77,19 +120,16 @@ CREATE TABLE public.competitors (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT competitors_pkey PRIMARY KEY (id),
-  CONSTRAINT competitors_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.businesses(id),
-  CONSTRAINT competitors_discovered_from_run_id_fkey FOREIGN KEY (discovered_from_run_id) REFERENCES public.pipeline_stage_runs(id)
+  CONSTRAINT competitors_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.businesses(id)
 );
-CREATE TABLE public.content_calendars (
+CREATE TABLE public.content_calendar_weekly_view (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   business_id uuid NOT NULL,
   week_start_date date NOT NULL,
-  priority_score double precision,
   meta jsonb NOT NULL DEFAULT '{}'::jsonb,
-  items jsonb NOT NULL DEFAULT '[]'::jsonb,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT content_calendars_pkey PRIMARY KEY (id),
+  CONSTRAINT content_calendar_weekly_view_pkey PRIMARY KEY (id),
   CONSTRAINT content_calendars_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.businesses(id)
 );
 CREATE TABLE public.content_ideas (
@@ -121,51 +161,6 @@ CREATE TABLE public.idea_feedback (
   CONSTRAINT idea_feedback_content_idea_id_fkey FOREIGN KEY (content_idea_id) REFERENCES public.content_ideas(id),
   CONSTRAINT idea_feedback_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
-CREATE TABLE public.org_members (
-  org_id uuid NOT NULL,
-  user_id uuid NOT NULL,
-  role USER-DEFINED NOT NULL DEFAULT 'member'::org_role,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT org_members_pkey PRIMARY KEY (org_id, user_id),
-  CONSTRAINT org_members_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id),
-  CONSTRAINT org_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
-);
-CREATE TABLE public.organizations (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT organizations_pkey PRIMARY KEY (id)
-);
-CREATE TABLE public.pipeline_runs (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  business_id uuid NOT NULL,
-  status USER-DEFINED NOT NULL DEFAULT 'queued'::run_status,
-  params jsonb NOT NULL DEFAULT '{}'::jsonb,
-  error jsonb,
-  started_at timestamp with time zone,
-  finished_at timestamp with time zone,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT pipeline_runs_pkey PRIMARY KEY (id),
-  CONSTRAINT pipeline_runs_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.businesses(id)
-);
-CREATE TABLE public.pipeline_stage_runs (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  pipeline_run_id uuid NOT NULL,
-  stage USER-DEFINED NOT NULL,
-  status USER-DEFINED NOT NULL DEFAULT 'queued'::run_status,
-  params jsonb NOT NULL DEFAULT '{}'::jsonb,
-  stats jsonb NOT NULL DEFAULT '{}'::jsonb,
-  error jsonb,
-  started_at timestamp with time zone,
-  finished_at timestamp with time zone,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT pipeline_stage_runs_pkey PRIMARY KEY (id),
-  CONSTRAINT pipeline_stage_runs_pipeline_run_id_fkey FOREIGN KEY (pipeline_run_id) REFERENCES public.pipeline_runs(id)
-);
 CREATE TABLE public.post_caption_embeddings (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   post_id uuid NOT NULL,
@@ -174,7 +169,7 @@ CREATE TABLE public.post_caption_embeddings (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT post_caption_embeddings_pkey PRIMARY KEY (id),
-  CONSTRAINT post_caption_embeddings_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.posts(id)
+  CONSTRAINT post_caption_embeddings_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.competitor_posts(id)
 );
 CREATE TABLE public.post_cluster_assignments (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -185,8 +180,7 @@ CREATE TABLE public.post_cluster_assignments (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT post_cluster_assignments_pkey PRIMARY KEY (id),
-  CONSTRAINT post_cluster_assignments_stage_run_id_fkey FOREIGN KEY (stage_run_id) REFERENCES public.pipeline_stage_runs(id),
-  CONSTRAINT post_cluster_assignments_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.posts(id),
+  CONSTRAINT post_cluster_assignments_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.competitor_posts(id),
   CONSTRAINT post_cluster_assignments_image_cluster_id_fkey FOREIGN KEY (image_cluster_id) REFERENCES public.clusters(id),
   CONSTRAINT post_cluster_assignments_caption_cluster_id_fkey FOREIGN KEY (caption_cluster_id) REFERENCES public.clusters(id)
 );
@@ -198,32 +192,7 @@ CREATE TABLE public.post_image_embeddings (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT post_image_embeddings_pkey PRIMARY KEY (id),
-  CONSTRAINT post_image_embeddings_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.posts(id)
-);
-CREATE TABLE public.posts (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  business_id uuid NOT NULL,
-  competitor_id uuid NOT NULL,
-  platform text NOT NULL DEFAULT 'instagram'::text,
-  external_post_id text,
-  permalink text,
-  caption text,
-  posted_at timestamp with time zone,
-  media_type text,
-  media jsonb NOT NULL DEFAULT '[]'::jsonb,
-  hashtags ARRAY NOT NULL DEFAULT '{}'::text[],
-  likes_count bigint DEFAULT 0,
-  comments_count bigint DEFAULT 0,
-  engagement_rate double precision,
-  weighted_interactions double precision,
-  wii double precision,
-  is_selected boolean NOT NULL DEFAULT false,
-  selection_meta jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT posts_pkey PRIMARY KEY (id),
-  CONSTRAINT posts_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.businesses(id),
-  CONSTRAINT posts_competitor_id_fkey FOREIGN KEY (competitor_id) REFERENCES public.competitors(id)
+  CONSTRAINT post_image_embeddings_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.competitor_posts(id)
 );
 CREATE TABLE public.profiles (
   user_id uuid NOT NULL,
@@ -236,31 +205,14 @@ CREATE TABLE public.profiles (
 );
 CREATE TABLE public.publish_attempts (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
-  scheduled_post_id uuid NOT NULL,
+  calendar_post_id uuid NOT NULL,
   attempt_no integer NOT NULL DEFAULT 1,
   requested_at timestamp with time zone NOT NULL DEFAULT now(),
   response jsonb,
   error jsonb,
   succeeded boolean NOT NULL DEFAULT false,
   CONSTRAINT publish_attempts_pkey PRIMARY KEY (id),
-  CONSTRAINT publish_attempts_scheduled_post_id_fkey FOREIGN KEY (scheduled_post_id) REFERENCES public.scheduled_posts(id)
-);
-CREATE TABLE public.scheduled_posts (
-  id uuid NOT NULL DEFAULT gen_random_uuid(),
-  business_id uuid NOT NULL,
-  content_idea_id uuid,
-  status USER-DEFINED NOT NULL DEFAULT 'draft'::scheduled_post_status,
-  scheduled_at timestamp with time zone,
-  approved_at timestamp with time zone,
-  caption text,
-  media jsonb NOT NULL DEFAULT '{}'::jsonb,
-  publish_result jsonb,
-  last_error jsonb,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
-  updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT scheduled_posts_pkey PRIMARY KEY (id),
-  CONSTRAINT scheduled_posts_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.businesses(id),
-  CONSTRAINT scheduled_posts_content_idea_id_fkey FOREIGN KEY (content_idea_id) REFERENCES public.content_ideas(id)
+  CONSTRAINT publish_attempts_calendar_post_id_fkey FOREIGN KEY (calendar_post_id) REFERENCES public.calendar_posts(id)
 );
 CREATE TABLE public.trend_summaries (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -270,6 +222,5 @@ CREATE TABLE public.trend_summaries (
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT trend_summaries_pkey PRIMARY KEY (id),
-  CONSTRAINT trend_summaries_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.businesses(id),
-  CONSTRAINT trend_summaries_stage_run_id_fkey FOREIGN KEY (stage_run_id) REFERENCES public.pipeline_stage_runs(id)
+  CONSTRAINT trend_summaries_business_id_fkey FOREIGN KEY (business_id) REFERENCES public.businesses(id)
 );

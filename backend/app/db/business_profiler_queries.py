@@ -37,7 +37,6 @@ def load_json(raw: Any) -> dict:
 
 
 class BusinessProfilerQueries:
-
     # get_business_context
     # Reads the businesses row, derives pipeline flags from related tables,
     # and builds a BusinessContext used by the router and agents.
@@ -55,9 +54,9 @@ class BusinessProfilerQueries:
         row = business.data[0]
         profile = load_json(row.get("profile_json"))
 
-        # Freshness timestamps derived from related tables (posts, trend_summaries, scheduled_posts)
+        # Freshness timestamps derived from related tables
         posts_ts = (
-            supabase.table("posts")
+            supabase.table("competitor_posts")
             .select("updated_at")
             .eq("business_id", business_id)
             .order("updated_at", desc=True)
@@ -82,7 +81,7 @@ class BusinessProfilerQueries:
         has_hashtags = bool(profile.get("primary_hashtags"))
 
         has_top_posts = bool(
-            supabase.table("posts")
+            supabase.table("competitor_posts")
             .select("id")
             .eq("business_id", business_id)
             .eq("is_selected", True)
@@ -110,7 +109,7 @@ class BusinessProfilerQueries:
         )
 
         has_scheduled_posts = bool(
-            supabase.table("scheduled_posts")
+            supabase.table("calendar_posts")
             .select("id")
             .eq("business_id", business_id)
             .in_("status", ["scheduled", "published"])
@@ -138,12 +137,12 @@ class BusinessProfilerQueries:
             trends_last_updated=trends_last_updated,
         )
 
-    # Scheduled posts    
+    # Calendar posts
     def get_scheduled_posts(self, day: date, business_id: str) -> list[dict[str, Any]]:
         start = datetime.combine(day, time.min, tzinfo=timezone.utc)
         end = start + timedelta(days=1)
-        scheduled_posts = (
-            supabase.table("scheduled_posts")
+        result = (
+            supabase.table("calendar_posts")
             .select("*")
             .eq("business_id", business_id)
             .gte("scheduled_at", start.isoformat())
@@ -151,48 +150,52 @@ class BusinessProfilerQueries:
             .order("scheduled_at")
             .execute()
         )
-        return scheduled_posts.data or []
+        return result.data or []
 
     def get_all_scheduled_posts(self, business_id: str) -> list[dict[str, Any]]:
-        scheduled_posts = (
-            supabase.table("scheduled_posts")
+        result = (
+            supabase.table("calendar_posts")
             .select("*")
             .eq("business_id", business_id)
             .gte("scheduled_at", datetime.now(timezone.utc).isoformat())
             .order("scheduled_at")
             .execute()
         )
-        return scheduled_posts.data or []
+        return result.data or []
 
     def cancel_scheduled_post(self, post_id: str) -> None:
-        supabase.table("scheduled_posts").delete().eq("id", post_id).execute()
+        supabase.table("calendar_posts").delete().eq("id", post_id).execute()
 
     def schedule_post(
         self,
         business_id: str,
+        content_calendar_id: str,
         scheduled_at: datetime,
         caption: Optional[str] = None,
-        media: Optional[dict[str, Any]] = None,
-        content_idea_id: Optional[str] = None,
+        media: Optional[list[dict[str, Any]]] = None,
+        hashtags: Optional[list[str]] = None,
+        day_of_the_week: Optional[int] = None,
         status: str = "scheduled",
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "business_id": business_id,
+            "content_calendar_id": content_calendar_id,
             "scheduled_at": check_utc(scheduled_at).isoformat(),
             "caption": caption,
-            "media": media or {},
+            "media": media or [],
+            "hashtags": hashtags or [],
             "status": status,
         }
-        if content_idea_id:
-            payload["content_idea_id"] = content_idea_id
-        scheduled_posts = supabase.table("scheduled_posts").insert(payload).execute()
-        if not scheduled_posts.data:
+        if day_of_the_week is not None:
+            payload["day_of_the_week"] = day_of_the_week
+        result = supabase.table("calendar_posts").insert(payload).execute()
+        if not result.data:
             raise RuntimeError("schedule_post insert returned no data")
-        return scheduled_posts.data[0]
+        return result.data[0]
 
     # Competitors
     def get_competitor_list(self, business_id: str) -> list[dict[str, Any]]:
-        competitors = (
+        result = (
             supabase.table("competitors")
             .select("*")
             .eq("business_id", business_id)
@@ -200,45 +203,38 @@ class BusinessProfilerQueries:
             .order("username")
             .execute()
         )
-        return competitors.data or []
+        return result.data or []
 
     def get_competitor_posts(self, business_id: str) -> list[dict[str, Any]]:
-        posts = (
-            supabase.table("posts")
+        result = (
+            supabase.table("competitor_posts")
             .select("*")
             .eq("business_id", business_id)
             .order("posted_at", desc=True)
             .execute()
         )
-        return posts.data or []
+        return result.data or []
 
-    # Hashtags (from businesses.profile_json)
+    # Hashtags (from competitor_posts.hashtags)
     # Async because manager_agent.py awaits this method.
-    def get_hashtags_sync(self, business_id: str) -> BusinessProfilerResult:
-        business = (
-            supabase.table("businesses")
-            .select("profile_json")
-            .eq("id", business_id)
-            .limit(1)
+    def get_competitor_hashtags_sync(self, business_id: str) -> list[str]:
+        result = (
+            supabase.table("competitor_posts")
+            .select("hashtags")
+            .eq("business_id", business_id)
             .execute()
         )
-        if not business.data:
-            raise LookupError(f"No business found for id={business_id}")
-        profile = load_json(business.data[0].get("profile_json"))
-        return BusinessProfilerResult(
-            business_id=business_id,
-            primary_hashtags=list(profile.get("primary_hashtags") or []),
-            secondary_hashtags=list(profile.get("secondary_hashtags") or []),
-            location_keywords=list(profile.get("location_keywords") or []),
-            exclude_accounts=list(profile.get("exclude_accounts") or []),
-            ideal_follower_min=int(profile.get("ideal_follower_min") or 0),
-            ideal_follower_max=int(profile.get("ideal_follower_max") or 1_000_000),
-        )
+        seen: set[str] = set()
+        for row in result.data or []:
+            for tag in row.get("hashtags") or []:
+                if tag and tag.strip():
+                    seen.add(tag.strip())
+        return sorted(seen)
 
-    async def get_hashtags(self, business_id: str) -> BusinessProfilerResult:
-        return await asyncio.to_thread(self.get_hashtags_sync, business_id)
+    async def get_competitor_hashtags(self, business_id: str) -> list[str]:
+        return await asyncio.to_thread(self.get_competitor_hashtags_sync, business_id)
 
-    # Trend summaries
+    # Trend summary
     # Async because manager_agent.py awaits this method.
     def get_trend_summary_sync(self, business_id: str) -> Optional[TrendSummary]:
         result = (

@@ -114,7 +114,7 @@ class ManagerAgent(Agent):
                 await self.content_generator_agent.run(context = context, trend_summary = trend_analysis_agent_results.summary)
 
         elif route == RouteType.SKIP_TO_COMPETITOR_ANALYSIS:
-            hashtags = await self.business_profiler_queries.get_hashtags(context.business_id)
+            hashtags = await self.business_profiler_queries.get_competitor_hashtags(context.business_id)
             competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
                 context = context,
                 primary_hashtags = profiler_agent_result.primary_hashtags,
