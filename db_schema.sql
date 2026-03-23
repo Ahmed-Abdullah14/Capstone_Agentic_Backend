@@ -1,8 +1,6 @@
--- ============================================================
--- LumenIQ Database Schema Reference (14 tables)
--- WARNING: This schema is for context only and is not meant to be run directly.
--- See supabase/migrations/001_initial_schema.sql for the runnable migration.
--- ============================================================
+
+-- LumenIQ Database Schema 
+-- DO NOT RUN THIS FILE DIRECTLY. IT IS FOR REFERENCE ONLY.
 
 -- ENUM TYPES:
 --   org_role: admin, member
@@ -11,9 +9,6 @@
 --   cluster_type: image, caption
 --   idea_status: pending, approved, rejected, used
 --   scheduled_post_status: draft, scheduled, published, failed
-
--- WARNING: This schema is for context only and is not meant to be run.
--- Table order and constraints may not be valid for execution.
 
 CREATE TABLE public.businesses (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
