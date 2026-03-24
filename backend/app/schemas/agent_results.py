@@ -16,6 +16,11 @@ class BusinessProfilerResult(BaseModel):
     ideal_follower_min: int
     ideal_follower_max: int
 
+    # Brand insights derived from Instagram profile and/or website analysis
+    brand_voice: Optional[str] = None           # e.g. "casual and friendly", "professional and polished"
+    brand_colors: Optional[list[str]] = None    # e.g. ["earth tones", "warm browns", "cream"]
+    content_style: Optional[str] = None         # e.g. "lifestyle photography with minimal text overlays"
+
 # ------------------------------------------------------ Competitor Analysis Agent --------------------------------------------------------
 
 # Pydantic model to format Competitor Analysis Agent Response 

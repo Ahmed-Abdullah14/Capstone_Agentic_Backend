@@ -137,6 +137,29 @@ class BusinessProfilerQueries:
             trends_last_updated=trends_last_updated,
         )
 
+    # Save profiler results
+    def save_profiler_result(self, result: BusinessProfilerResult) -> None:
+        profile_json = {
+            "primary_hashtags": result.primary_hashtags,
+            "secondary_hashtags": result.secondary_hashtags,
+            "location_keywords": result.location_keywords,
+            "exclude_accounts": result.exclude_accounts,
+            "ideal_follower_min": result.ideal_follower_min,
+            "ideal_follower_max": result.ideal_follower_max,
+            "brand_voice": result.brand_voice,
+            "brand_colors": result.brand_colors,
+            "content_style": result.content_style,
+            "hashtags_last_updated": datetime.now(timezone.utc).isoformat(),
+        }
+        resp = (
+            supabase.table("businesses")
+            .update({"profile_json": json.dumps(profile_json)})
+            .eq("id", result.business_id)
+            .execute()
+        )
+        if not resp.data:
+            raise RuntimeError(f"Failed to save profiler result for business_id={result.business_id}")
+
     # Calendar posts
     def get_scheduled_posts(self, day: date, business_id: str) -> list[dict[str, Any]]:
         start = datetime.combine(day, time.min, tzinfo=timezone.utc)
