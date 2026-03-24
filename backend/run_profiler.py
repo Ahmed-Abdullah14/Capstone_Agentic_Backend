@@ -14,6 +14,7 @@ async def main():
     location = input("Location (city, province/state, country): ").strip()
     target_customers = input("Target Customers: ").strip()
     instagram_handle = input("Instagram Handle (optional): ").strip() or None
+    website = input("Business Website (optional): ").strip() or None
 
     context = BusinessContext(
         user_id="test-user-001",
@@ -23,11 +24,14 @@ async def main():
         location=location,
         target_customers=target_customers,
         instagram_handle=instagram_handle,
+        website=website,
     )
 
-    print("Running Business Profiler Agent...")
-    print(f"  Business: {context.business_name}")
-    print(f"  Location: {context.location}")
+    print("\nRunning Business Profiler Agent...")
+    print(f"  Business:  {context.business_name}")
+    print(f"  Location:  {context.location}")
+    print(f"  Instagram: {context.instagram_handle or 'Not provided'}")
+    print(f"  Website:   {context.website or 'Not provided'}")
     print()
 
     result = await agent.run(context=context)
@@ -38,6 +42,11 @@ async def main():
     print(f"Location Keywords:  {result.location_keywords}")
     print(f"Exclude Accounts:   {result.exclude_accounts}")
     print(f"Follower Range:     {result.ideal_follower_min} – {result.ideal_follower_max}")
+    print()
+    print("=== Brand Analysis ===")
+    print(f"Brand Voice:    {result.brand_voice or 'N/A'}")
+    print(f"Brand Colors:   {result.brand_colors or 'N/A'}")
+    print(f"Content Style:  {result.content_style or 'N/A'}")
 
 
 if __name__ == "__main__":
