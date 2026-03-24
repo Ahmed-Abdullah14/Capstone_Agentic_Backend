@@ -23,6 +23,11 @@ class BusinessProfilerAgent(Agent):
         system_prompt = (
             "You are an Instagram growth strategist for local businesses.\n"
             "Given a business profile, generate hashtags and search parameters to find local competitors on Instagram.\n\n"
+            "If the business provides an Instagram handle, search their Instagram profile to understand their current brand voice, "
+            "visual style, posting patterns, and the type of content they share. Use this to tailor your recommendations.\n\n"
+            "If the business provides a website URL, search their website to understand their brand tone, business colors, "
+            "services/products offered, and overall brand identity. Use this to make your hashtag and keyword recommendations "
+            "more aligned with their actual brand.\n\n"
             "Return ONLY valid JSON with this exact structure:\n"
             "{\n"
             '  "primary_hashtags": ["list of 3 hyper-local/niche hashtags specific to the city and business type"],\n'
@@ -30,11 +35,17 @@ class BusinessProfilerAgent(Agent):
             '  "location_keywords": ["list of 2-4 location-based search terms"],\n'
             '  "exclude_accounts": ["list of 2-4 large chain/franchise accounts to filter out"],\n'
             '  "ideal_follower_min": 500,\n'
-            '  "ideal_follower_max": 30000\n'
+            '  "ideal_follower_max": 30000,\n'
+            '  "brand_voice": "short description of the brand tone/voice based on their Instagram and website (e.g. casual and friendly, professional and polished)",\n'
+            '  "brand_colors": ["list of brand colors or color themes observed from their website/Instagram"],\n'
+            '  "content_style": "short description of the visual content style observed (e.g. lifestyle photography, flat lays, behind-the-scenes)"\n'
             "}\n\n"
             "Guidelines:\n"
             "- Primary hashtags should combine the city/area with the business type (e.g. yyccoffee, calgarycafes)\n"
             "- Secondary hashtags should be broader industry terms (e.g. latteart, specialtycoffee)\n"
+            "- If an Instagram handle is provided, look at their profile to understand what content resonates with their audience "
+            "and suggest hashtags that align with their existing brand voice and content style\n"
+            "- If a website is provided, analyze the brand tone, colors, and offerings to recommend hashtags that match their identity\n"
             "- Exclude accounts should be large national/international chains that would skew competitor analysis\n"
             "- Follower range should target local businesses, not large brands (min: 500, max: 30000)\n"
             "- Location keywords should help identify businesses in the same area\n"
@@ -46,7 +57,8 @@ class BusinessProfilerAgent(Agent):
             f"Business Type: {context.business_type}\n"
             f"Location: {context.location}\n"
             f"Target Customers: {context.target_customers}\n"
-            f"Instagram Handle: {context.instagram_handle or 'N/A'}"
+            f"Instagram Handle: {context.instagram_handle or 'Not provided'}\n"
+            f"Website: {context.website or 'Not provided'}"
         )
 
         # Call LLM to generate hashtags and search parameters
@@ -93,4 +105,7 @@ class BusinessProfilerAgent(Agent):
             exclude_accounts=data["exclude_accounts"],
             ideal_follower_min=data.get("ideal_follower_min", 500),
             ideal_follower_max=data.get("ideal_follower_max", 30000),
+            brand_voice=data.get("brand_voice"),
+            brand_colors=data.get("brand_colors"),
+            content_style=data.get("content_style"),
         )
