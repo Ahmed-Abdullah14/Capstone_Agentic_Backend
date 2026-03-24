@@ -25,8 +25,8 @@ class BusinessProfilerAgent(Agent):
             "Given a business profile, generate hashtags and search parameters to find local competitors on Instagram.\n\n"
             "Return ONLY valid JSON with this exact structure:\n"
             "{\n"
-            '  "primary_hashtags": ["list of 4-6 hyper-local/niche hashtags specific to the city and business type"],\n'
-            '  "secondary_hashtags": ["list of 4-6 broader industry hashtags that are not location-specific"],\n'
+            '  "primary_hashtags": ["list of 3 hyper-local/niche hashtags specific to the city and business type"],\n'
+            '  "secondary_hashtags": ["list of 2 broader industry hashtags that are not location-specific"],\n'
             '  "location_keywords": ["list of 2-4 location-based search terms"],\n'
             '  "exclude_accounts": ["list of 2-4 large chain/franchise accounts to filter out"],\n'
             '  "ideal_follower_min": 500,\n'
