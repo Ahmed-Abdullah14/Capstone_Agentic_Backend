@@ -1,8 +1,27 @@
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
-# We are using pydantic models rather than passing dictionaries for better data validation 
+
+def check_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def check_within_range(
+    ts: Optional[datetime],
+    max_age_days: float,
+    *,
+    now: Optional[datetime] = None,) -> bool:
+    """True if ts is set and not older than max_age_days relative to now (UTC)."""
+    if ts is None:
+        return False
+    effective_now = now if now is not None else datetime.now(timezone.utc)
+    ts_utc = check_utc(ts)
+    now_utc = check_utc(effective_now)
+    return now_utc - ts_utc <= timedelta(days=max_age_days)
+
 
 class BusinessContext(BaseModel):
     user_id: str        # Which user is logged in the LumenIQ account
@@ -35,12 +54,8 @@ class BusinessContext(BaseModel):
     trends_last_updated: Optional[datetime] = None
 
     # Helper functions to calculate post and trend summaries age and check their validaity - Used in Router.py
-    def are_posts_valid(self, max_age_days):
-        # TODO: Implement this function to calculate post age based on post_last_scraped and check if that age is within threshold of max_age_days
-        # Function should return eitehr True or False
-        return True
-    
-    def are_trends_valid(self, max_age_days):
-        # TODO: Implement this function to calculate trend summary age based on trends_last_updated and check if that age is within threshold of max_age_days
-        # Function should return eitehr True or False
-        return True
+    def are_posts_valid(self, max_age_days: float) -> bool:
+        return check_within_range(self.posts_last_scraped, max_age_days)
+
+    def are_trends_valid(self, max_age_days: float) -> bool:
+        return check_within_range(self.trends_last_updated, max_age_days)

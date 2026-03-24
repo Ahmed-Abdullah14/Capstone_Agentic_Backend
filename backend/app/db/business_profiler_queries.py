@@ -1,39 +1,257 @@
-from app.db.supabase_client import supabase
-from app.schemas.business_context import BusinessContext
+from __future__ import annotations
 
-# This file will have all DB functions related to the application 
+import asyncio
+import json
+import logging
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Any, Optional
+
+from app.db.supabase_client import supabase
+from app.schemas.agent_results import BusinessProfilerResult, TrendSummary
+from app.schemas.business_context import BusinessContext, check_utc
+
+logger = logging.getLogger(__name__)
+
+
+def parse_dt(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return check_utc(value)
+    if isinstance(value, str):
+        return check_utc(datetime.fromisoformat(value.replace("Z", "+00:00")))
+    return None
+
+
+def format_location(city: Optional[str], country: Optional[str]) -> Optional[str]:
+    parts = [p for p in (city, country) if p and p.strip()]
+    return ", ".join(parts) if parts else None
+
+
+def load_json(raw: Any) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        return json.loads(raw)
+    return {}
+
 
 class BusinessProfilerQueries:
+    # get_business_context
+    # Reads the businesses row, derives pipeline flags from related tables,
+    # and builds a BusinessContext used by the router and agents.
 
-    # DB Function to fetch business context
-    def get_business_context(self, user_id, business_id):
-        # Mocked data right now to get business context, once DB is connected it should get this from DB
+    def get_business_context(self, user_id: str, business_id: str) -> BusinessContext:
+        business = (
+            supabase.table("businesses")
+            .select("*")
+            .eq("id", business_id)
+            .limit(1)
+            .execute()
+        )
+        if not business.data:
+            raise LookupError(f"No business found for id={business_id}")
+        row = business.data[0]
+        profile = load_json(row.get("profile_json"))
+
+        # Freshness timestamps derived from related tables
+        posts_ts = (
+            supabase.table("competitor_posts")
+            .select("updated_at")
+            .eq("business_id", business_id)
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        posts_last_scraped = parse_dt(posts_ts.data[0]["updated_at"]) if posts_ts.data else None
+
+        trends_ts = (
+            supabase.table("trend_summaries")
+            .select("updated_at")
+            .eq("business_id", business_id)
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        trends_last_updated = parse_dt(trends_ts.data[0]["updated_at"]) if trends_ts.data else None
+
+        hashtags_last_updated = parse_dt(profile.get("hashtags_last_updated"))
+
+        # Pipeline state flags
+        has_hashtags = bool(profile.get("primary_hashtags"))
+
+        has_top_posts = bool(
+            supabase.table("competitor_posts")
+            .select("id")
+            .eq("business_id", business_id)
+            .eq("is_selected", True)
+            .limit(1)
+            .execute()
+            .data
+        )
+
+        has_trend_summary = bool(
+            supabase.table("trend_summaries")
+            .select("id")
+            .eq("business_id", business_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+
+        has_content_plan = bool(
+            supabase.table("content_ideas")
+            .select("id")
+            .eq("business_id", business_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+
+        has_scheduled_posts = bool(
+            supabase.table("calendar_posts")
+            .select("id")
+            .eq("business_id", business_id)
+            .in_("status", ["scheduled", "published"])
+            .limit(1)
+            .execute()
+            .data
+        )
+
         return BusinessContext(
             user_id=user_id,
             business_id=business_id,
-            business_name="Downtown Calgary Cafe",
-            business_type="Local Cafe Shop",
-            location="Calgary, Alberta",
-            target_customers="Students and young professionals",
-            instagram_handle="downtown_cafe"
+            business_name=row.get("name"),
+            business_type=row.get("business_type"),
+            location=format_location(row.get("city"), row.get("country")),
+            target_customers=row.get("ideal_customer"),
+            instagram_handle=row.get("instagram_handle"),
+            website=row.get("website_url"),
+            has_hashtags=has_hashtags,
+            has_top_posts=has_top_posts,
+            has_trend_summary=has_trend_summary,
+            has_content_plan=has_content_plan,
+            has_scheduled_posts=has_scheduled_posts,
+            hashtags_last_updated=hashtags_last_updated,
+            posts_last_scraped=posts_last_scraped,
+            trends_last_updated=trends_last_updated,
         )
-    
-    def get_scheduled_posts(self, date, business_id):    # fetch posts for a specific date
-        pass
-    def get_all_scheduled_posts(self, business_id):      # fetch all upcoming posts
-        pass
-    def cancel_scheduled_post(self, post_id):            # cancel/delete a scheduled post
-        pass
-    def schedule_post(self):                   # Creates a post table entry in DB
-        pass
-    def get_competitor_list(self, business_id):  # fetch existing competitor accounts from DB
-        pass
-    def get_competitor_posts(self, business_id): # fetch scraped competitor posts
-        pass
 
-    # HIGH PROPORTY
-    def get_hashtags(self, business_id):        # Fetches hashtags for business from DB
-        pass
-    def get_trend_summary(self, business_id):   # Fetches Trend Summaries for business from DB
-        pass
+    # Calendar posts
+    def get_scheduled_posts(self, day: date, business_id: str) -> list[dict[str, Any]]:
+        start = datetime.combine(day, time.min, tzinfo=timezone.utc)
+        end = start + timedelta(days=1)
+        result = (
+            supabase.table("calendar_posts")
+            .select("*")
+            .eq("business_id", business_id)
+            .gte("scheduled_at", start.isoformat())
+            .lt("scheduled_at", end.isoformat())
+            .order("scheduled_at")
+            .execute()
+        )
+        return result.data or []
 
+    def get_all_scheduled_posts(self, business_id: str) -> list[dict[str, Any]]:
+        result = (
+            supabase.table("calendar_posts")
+            .select("*")
+            .eq("business_id", business_id)
+            .gte("scheduled_at", datetime.now(timezone.utc).isoformat())
+            .order("scheduled_at")
+            .execute()
+        )
+        return result.data or []
+
+    def cancel_scheduled_post(self, post_id: str) -> None:
+        supabase.table("calendar_posts").delete().eq("id", post_id).execute()
+
+    def schedule_post(
+        self,
+        business_id: str,
+        content_calendar_id: str,
+        scheduled_at: datetime,
+        caption: Optional[str] = None,
+        media: Optional[list[dict[str, Any]]] = None,
+        hashtags: Optional[list[str]] = None,
+        day_of_the_week: Optional[int] = None,
+        status: str = "scheduled",
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "business_id": business_id,
+            "content_calendar_id": content_calendar_id,
+            "scheduled_at": check_utc(scheduled_at).isoformat(),
+            "caption": caption,
+            "media": media or [],
+            "hashtags": hashtags or [],
+            "status": status,
+        }
+        if day_of_the_week is not None:
+            payload["day_of_the_week"] = day_of_the_week
+        result = supabase.table("calendar_posts").insert(payload).execute()
+        if not result.data:
+            raise RuntimeError("schedule_post insert returned no data")
+        return result.data[0]
+
+    # Competitors
+    def get_competitor_list(self, business_id: str) -> list[dict[str, Any]]:
+        result = (
+            supabase.table("competitors")
+            .select("*")
+            .eq("business_id", business_id)
+            .eq("is_active", True)
+            .order("username")
+            .execute()
+        )
+        return result.data or []
+
+    def get_competitor_posts(self, business_id: str) -> list[dict[str, Any]]:
+        result = (
+            supabase.table("competitor_posts")
+            .select("*")
+            .eq("business_id", business_id)
+            .order("posted_at", desc=True)
+            .execute()
+        )
+        return result.data or []
+
+    # Hashtags (from competitor_posts.hashtags)
+    # Async because manager_agent.py awaits this method.
+    def get_competitor_hashtags_sync(self, business_id: str) -> list[str]:
+        result = (
+            supabase.table("competitor_posts")
+            .select("hashtags")
+            .eq("business_id", business_id)
+            .execute()
+        )
+        seen: set[str] = set()
+        for row in result.data or []:
+            for tag in row.get("hashtags") or []:
+                if tag and tag.strip():
+                    seen.add(tag.strip())
+        return sorted(seen)
+
+    async def get_competitor_hashtags(self, business_id: str) -> list[str]:
+        return await asyncio.to_thread(self.get_competitor_hashtags_sync, business_id)
+
+    # Trend summary
+    # Async because manager_agent.py awaits this method.
+    def get_trend_summary_sync(self, business_id: str) -> Optional[TrendSummary]:
+        result = (
+            supabase.table("trend_summaries")
+            .select("*")
+            .eq("business_id", business_id)
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return None
+        row = result.data[0]
+        data = load_json(row.get("summary"))
+        if "created_at" not in data and row.get("created_at"):
+            data["created_at"] = row["created_at"]
+        return TrendSummary.model_validate(data)
+
+    async def get_trend_summary(self, business_id: str) -> Optional[TrendSummary]:
+        return await asyncio.to_thread(self.get_trend_summary_sync, business_id)

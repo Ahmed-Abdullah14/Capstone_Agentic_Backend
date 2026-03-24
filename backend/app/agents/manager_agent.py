@@ -179,7 +179,7 @@ class ManagerAgent(Agent):
         
 
         elif route == RouteType.SKIP_TO_COMPETITOR_ANALYSIS:
-            hashtags = await self.business_profiler_queries.get_hashtags(context.business_id)
+            hashtags = await self.business_profiler_queries.get_competitor_hashtags(context.business_id)
  
             async with cl.Step(name="Finding your competitors...") as step:
                 competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
