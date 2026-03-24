@@ -21,8 +21,8 @@ async def on_chat_start():
     thread = ChatHistoryAgentThread(chat_history=ChatHistory())
     cl.user_session.set("thread", thread)
 
-    user_id = "user_123"
-    business_id = "business_123"
+    user_id = "user_1"
+    business_id = "54eb934a-83b3-4ca4-9caf-8b3575e5d3ff"    # Get from DB
 
     cl.user_session.set("user_id", user_id)
     cl.user_session.set("business_id", business_id)

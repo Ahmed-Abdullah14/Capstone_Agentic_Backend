@@ -237,7 +237,19 @@ class ManagerAgent(Agent):
         elif route == RouteType.PROFILER_AND_COMPETITOR_ONLY:
             async with cl.Step(name="Analyzing your business profile...") as step:
                 profiler_agent_result = await self.business_profiler_agent.run(context = context)
-                step.output = "Business profile analyzed."
+                step.output = (
+                    f"Business profile analyzed.\n\n"
+                    f"=== Results ===\n"
+                    f"primary_hashtags: {profiler_agent_result.primary_hashtags}\n"
+                    f"secondary_hashtags: {profiler_agent_result.secondary_hashtags}\n"
+                    f"location_keywords: {profiler_agent_result.location_keywords}\n"
+                    f"exclude_accounts: {profiler_agent_result.exclude_accounts}\n"
+                    f"Follower Range: {profiler_agent_result.ideal_follower_min} – {profiler_agent_result.ideal_follower_max}\n\n"
+                    f"=== Brand Analysis ===\n"
+                    f"Brand Voice: {profiler_agent_result.brand_voice or 'N/A'}\n"
+                    f"Brand Colors: {profiler_agent_result.brand_colors or 'N/A'}\n"
+                    f"Content Style: {profiler_agent_result.content_style or 'N/A'}\n"
+                )
  
             async with cl.Step(name="Finding your competitors...") as step:
                 competitor_analysis_agent_result = await self.competitor_analysis_agent.run(
@@ -254,7 +266,7 @@ class ManagerAgent(Agent):
  
 
         elif route == RouteType.COMPETITOR_ANALYSIS_ONLY:
-            hashtags = await self.business_profiler_queries.get_hashtags(context.business_id)
+            hashtags = await self.business_profiler_queries.get_competitor_hashtags(context.business_id)
  
             async with cl.Step(name="Finding your competitors...") as step:
                 competitor_analysis_agent_result = await self.competitor_analysis_agent.run(

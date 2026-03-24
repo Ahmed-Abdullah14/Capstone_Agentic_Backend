@@ -4,6 +4,7 @@ from app.agents.base_agent import Agent
 from app.schemas.business_context import BusinessContext
 from app.schemas.agent_results import BusinessProfilerResult
 from app.config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, PROFILER_MODEL
+from app.db.business_profiler_queries import BusinessProfilerQueries
 
 
 class BusinessProfilerAgent(Agent):
@@ -13,6 +14,7 @@ class BusinessProfilerAgent(Agent):
             api_key=OPENROUTER_API_KEY,
             base_url=OPENROUTER_BASE_URL,
         )
+        self.business_profiler_queries = BusinessProfilerQueries()
 
     async def run(self, context: BusinessContext) -> BusinessProfilerResult:
 
@@ -96,8 +98,8 @@ class BusinessProfilerAgent(Agent):
         missing = [f for f in required_fields if f not in data]
         if missing:
             raise RuntimeError(f"Business Profiler LLM response missing required fields: {missing}")
-
-        return BusinessProfilerResult(
+        
+        profiler_result = BusinessProfilerResult(
             business_id=context.business_id,
             primary_hashtags=data["primary_hashtags"],
             secondary_hashtags=data["secondary_hashtags"],
@@ -109,3 +111,8 @@ class BusinessProfilerAgent(Agent):
             brand_colors=data.get("brand_colors"),
             content_style=data.get("content_style"),
         )
+        
+        #self.business_profiler_queries.save_profiler_result(profiler_result)           # Once its saved to DB Manager will not route to profiler again, so dont save to db if you want to see the profilers response.
+
+        return profiler_result
+    

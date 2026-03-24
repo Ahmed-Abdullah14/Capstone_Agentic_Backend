@@ -186,6 +186,13 @@ class Router:
                 "Content plan exists. Ready to schedule a post.",
                 "scheduler"
             )
+        if not context.has_hashtags:
+            return (
+                RouteType.PROFILER_AND_COMPETITOR_ONLY,
+                "business_profiler_agent",
+                "No data found. Starting with competitor discovery.",
+                "competitor_only"
+            )
         return (
             RouteType.UNKNOWN,
             "manager_agent",
