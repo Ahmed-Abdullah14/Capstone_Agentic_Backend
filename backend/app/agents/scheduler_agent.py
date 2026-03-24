@@ -4,7 +4,7 @@ import requests
 import json
 from datetime import datetime, timezone
 from app.agents.base_agent import Agent
-from app.db.scheduler_queries import get_due_scheduled_posts, mark_post_as_published, log_publish_attempt
+from app.db.business_profiler_queries import get_due_scheduled_posts, mark_post_as_published, log_publish_attempt
 from app.config import FACEBOOK_ACCESS_TOKEN, IG_ACCOUNT_ID, FB_API_VERSION
 
 class SchedulerAgent(Agent):
