@@ -1,5 +1,5 @@
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # type: ignore
 
 load_dotenv()
 
@@ -23,3 +23,7 @@ CLIP_MODEL = "openai/clip-vit-large-patch14"
 
 APP_NAME = "LumenIQ"
 
+# --- Scheduler / Posting Agent ---
+FACEBOOK_ACCESS_TOKEN = os.getenv("FACEBOOK_ACCESS_TOKEN", "")
+IG_ACCOUNT_ID = os.getenv("IG_ACCOUNT_ID", "")
+FB_API_VERSION = os.getenv("FB_API_VERSION", "v19.0")
