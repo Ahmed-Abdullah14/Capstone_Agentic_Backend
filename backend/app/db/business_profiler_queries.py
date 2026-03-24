@@ -278,3 +278,29 @@ class BusinessProfilerQueries:
 
     async def get_trend_summary(self, business_id: str) -> Optional[TrendSummary]:
         return await asyncio.to_thread(self.get_trend_summary_sync, business_id)
+
+#scheduler queries
+# widescale queires to grab all scheduled posts that are due to be published
+# not tied to a specific business or user, but for the entire platform
+def get_due_scheduled_posts(now_iso: str):
+    response = supabase.table("calendar_posts") \
+        .select("*") \
+        .eq("status", "scheduled") \
+        .lte("scheduled_at", now_iso) \
+        .execute()
+    return response.data
+
+def mark_post_as_published(post_id: str):
+    supabase.table("calendar_posts") \
+        .update({"status": "published"}) \
+        .eq("id", post_id) \
+        .execute()
+
+def log_publish_attempt(post_id: str, succeeded: bool, message: str = ""):
+    data = {
+        "calendar_post_id": post_id,
+        "succeeded": succeeded
+    }
+    if message:
+        data["response"] = {"message": message}
+    supabase.table("publish_attempts").insert(data).execute()
