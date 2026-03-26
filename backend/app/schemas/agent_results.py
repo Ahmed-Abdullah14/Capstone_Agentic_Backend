@@ -40,7 +40,10 @@ class CompetitorAnalysisResult(BaseModel):
 class BestCombination(BaseModel):
     image_style: str
     caption_style: str
+    best_hashtags: list[str]
+    best_posting_times: str
     engagement_multiplier: float
+
 
 # Pydantic model needed to format summary in TrendAnalysisResults
 class TrendSummary(BaseModel):
@@ -72,12 +75,21 @@ class PhotoDetails(BaseModel):
 class ContentGeneratorResult(BaseModel):
     business_id: str
     success: bool
-    content_response: str           # full narrative description of the post idea
-    photo: PhotoDetails             # Used from class above PhotoDetails(BaseModel)   
-    caption: str
-    hashtags: list[str]
+    mode: str
+
+    # Default Mode Response
+    content_response: Optional[str] = None           # full narrative description of the post idea in default mode or agent response for other 2 modes
+    photo: Optional[PhotoDetails] = None             # Used from class above PhotoDetails(BaseModel)   
+    caption: Optional[str] = None
+    hashtags: Optional[list[str]] = None
+    best_posting_time: Optional[str] = None
     generated_at: Optional[datetime] = None
 
+    # Generate image Mode Response
+    image_url: Optional[str] = None
+
+    # Analyze photo Mode Response
+    photo_analysis: Optional[str] = None
 
 # -------------------------------------------------------- Scheduler Agent --------------------------------------------------------------
 
