@@ -54,16 +54,16 @@ class BusinessProfilerQueries:
         row = business.data[0]
         profile = load_json(row.get("profile_json"))
 
-        # Freshness timestamps derived from related tables
+        # Freshness: competitor_posts has no updated_at; use latest posted_at as scrape recency proxy
         posts_ts = (
             supabase.table("competitor_posts")
-            .select("updated_at")
+            .select("posted_at")
             .eq("business_id", business_id)
-            .order("updated_at", desc=True)
+            .order("posted_at", desc=True)
             .limit(1)
             .execute()
         )
-        posts_last_scraped = parse_dt(posts_ts.data[0]["updated_at"]) if posts_ts.data else None
+        posts_last_scraped = parse_dt(posts_ts.data[0]["posted_at"]) if posts_ts.data else None
 
         trends_ts = (
             supabase.table("trend_summaries")
@@ -80,11 +80,11 @@ class BusinessProfilerQueries:
         # Pipeline state flags
         has_hashtags = bool(profile.get("primary_hashtags"))
 
+        # Schema has no is_selected; treat as scraped posts present (competitor pipeline completed)
         has_top_posts = bool(
             supabase.table("competitor_posts")
             .select("id")
             .eq("business_id", business_id)
-            .eq("is_selected", True)
             .limit(1)
             .execute()
             .data
@@ -222,7 +222,6 @@ class BusinessProfilerQueries:
             supabase.table("competitors")
             .select("*")
             .eq("business_id", business_id)
-            .eq("is_active", True)
             .order("username")
             .execute()
         )
