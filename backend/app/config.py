@@ -16,9 +16,9 @@ CLUSTER_LABEL_MODEL = os.getenv("CLUSTER_LABEL_MODEL", "openai/gpt-4o")
 CONTENT_MODEL = os.getenv("CONTENT_MODEL", "openai/gpt-4o")
 
 
-#OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")           # Used for embeddings since operrouter does not support embedding models
 TEXT_EMBEDDING_MODEL = "text-embedding-3-small"
-CLIP_MODEL = "openai/clip-vit-large-patch14"
+CLIP_MODEL = "openai/clip-vit-base-patch32"
+#CLIP_MODEL = "openai/clip-vit-large-patch14"
 
 
 APP_NAME = "LumenIQ"

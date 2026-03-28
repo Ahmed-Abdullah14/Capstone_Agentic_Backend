@@ -5,3 +5,7 @@ python-dotenv
 pydantic
 requests
 supabase
+Pillow
+scikit-learn
+transformers
+torch
