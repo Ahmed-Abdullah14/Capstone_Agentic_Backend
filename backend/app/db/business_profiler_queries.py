@@ -54,7 +54,7 @@ class BusinessProfilerQueries:
         row = business.data[0]
         profile = load_json(row.get("profile_json"))
 
-        # Freshness: competitor_posts has no updated_at; use latest posted_at as scrape recency proxy
+        # Freshness: competitor_posts uses latest posted_at of scraped posts for freshness
         posts_ts = (
             supabase.table("competitor_posts")
             .select("posted_at")
@@ -79,8 +79,7 @@ class BusinessProfilerQueries:
 
         # Pipeline state flags
         has_hashtags = bool(profile.get("primary_hashtags"))
-
-        # Schema has no is_selected; treat as scraped posts present (competitor pipeline completed)
+        
         has_top_posts = bool(
             supabase.table("competitor_posts")
             .select("id")
