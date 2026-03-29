@@ -11,6 +11,9 @@ import torch
 from transformers import CLIPProcessor, CLIPModel
 from PIL import Image
 from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+from sklearn.decomposition import PCA
+from collections import Counter
 from sklearn.preprocessing import normalize
 
 class TrendAnalysisAgent(Agent):
@@ -32,8 +35,8 @@ class TrendAnalysisAgent(Agent):
 
         # Fetching competitors posts
         business_id = context.business_id
-        #competitor_posts = self.business_profiler_queries.get_competitor_posts(business_id)
-        competitor_posts = self.business_profiler_queries.get_competitor_posts_test(business_id)
+        competitor_posts = self.business_profiler_queries.get_competitor_posts(business_id)
+        #competitor_posts = self.business_profiler_queries.get_competitor_posts_test(business_id)
         #print(competitor_posts)
 
         # Generating caption embeddings and saving it in a list of  dicitonaries
@@ -53,8 +56,8 @@ class TrendAnalysisAgent(Agent):
         
         # Debugging 
         #print(caption_data)
-        #print()
         print(len(caption_data))
+        #print()
 
         # Downloading all images concurrently to reduce downloading bottleneck
         all_urls = []
@@ -74,9 +77,64 @@ class TrendAnalysisAgent(Agent):
 
         # Debugging
         #print (image_data)
-        #print()
         print(len(image_data))
 
+        # Converting caption and image records to embedding matrices
+        caption_embedding_records = []
+        for record in caption_data:
+            caption_embedding_records.append(record["embedding"])
+        caption_embedding_matrix = np.array(caption_embedding_records)
+
+        image_embedding_records = []
+        for record in image_data:
+            image_embedding_records.append(record["embedding"])
+        image_embedding_matrix = np.array(image_embedding_records)
+
+        # Applything PCA to reduce noise in data
+        caption_embedding_matrix = self.reduce_dimensions(caption_embedding_matrix)
+        image_embedding_matrix = self.reduce_dimensions(image_embedding_matrix)
+
+        # Finding the optimal K value for K means 
+        caption_cluster_k_value = self.find_best_k(caption_embedding_matrix)
+        print(f"Best caption K: {caption_cluster_k_value}")
+        image_cluster_k_value = self.find_best_k(image_embedding_matrix)
+        print(f"Best Image K: {image_cluster_k_value}")
+
+        # Running K means clustering
+        caption_kmeans = KMeans(n_clusters=caption_cluster_k_value, random_state=42, n_init=10)
+        image_kmeans = KMeans(n_clusters=image_cluster_k_value, random_state=42, n_init=10)
+
+        caption_preds = caption_kmeans.fit_predict(caption_embedding_matrix)
+        image_preds = image_kmeans.fit_predict(image_embedding_matrix)
+
+        # Assigning cluster prediction ids to caption and image data records
+        for i, record in enumerate(caption_data):
+            record["cluster_id"] = int(caption_preds[i])
+        
+        for i, record in enumerate(image_data):
+            record["cluster_id"] = int(image_preds[i])
+
+        # Assigning a caption and image cluster id to each post 
+        post_caption_cluster = {}
+        for record in caption_data:
+            post_caption_cluster[record["post_id"]] = record["cluster_id"]
+
+        # A single post id can be linked to multiple image clusters ids because one post can have multiple images, each with a seperate cluster id
+        # Find the most dominant id in the list of image cluster ids and assign that cluster id to the post
+        post_clusters = {}
+        for record in image_data:
+            post_id = record["post_id"]
+            cluster_id = record["cluster_id"]
+
+            if post_id not in post_clusters:
+                post_clusters[post_id] = []
+            post_clusters[post_id].append(cluster_id)
+        
+        post_image_cluster = {}
+        for post_id in post_clusters:
+            clusters_list = post_clusters[post_id]
+            post_image_cluster[post_id] = self.assign_dominant_cluster_id(clusters_list)
+        
     
     # Creating embeddings for all captions
     async def embed_captions(self, captions):
@@ -121,4 +179,29 @@ class TrendAnalysisAgent(Agent):
         except Exception as e:
             print(f"Failed to download {url}: {e}")
             return url, None
+    
+    # Finds best k value based on silhouette score
+    def find_best_k(self, embeddings):
+        si_scores = []
+        for k in range(3,12):
+            if k >= len(embeddings):
+                break
+            model = KMeans(n_clusters=k, random_state=42)
+            preds = model.fit_predict(embeddings)
+            si_score = silhouette_score(embeddings, preds)
+            si_scores.append(si_score)
+            print(f"k={k}, silhouette score={si_score:.4f}")
+            
 
+        best_k = si_scores.index(max(si_scores)) + 3
+        return best_k
+    
+    # Applying PCA to reduce noise in data 
+    def reduce_dimensions(self, embeddings):
+        n_components = 35
+        pca = PCA(n_components=n_components, random_state=42)
+        return pca.fit_transform(embeddings)
+
+    def assign_dominant_cluster_id(self, cluster_list):
+        return Counter(cluster_list).most_common(1)[0][0]
+        
